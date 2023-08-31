@@ -5,8 +5,8 @@ import (
 	"os"
 	"runtime"
 
-	"containers/networking"
-
+	user "github.com/narharim/container-networking/pkg/utils"
+	networking "github.com/narharim/container-networking/pkg/veth"
 	"github.com/vishvananda/netns"
 )
 
@@ -22,7 +22,7 @@ func main() {
 	//https://stackoverflow.com/questions/27629380/how-to-exit-a-go-program-honoring-deferred-calls
 	defer os.Exit(0)
 
-	CheckRootPrivileges()
+	user.CheckRootPrivileges()
 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
