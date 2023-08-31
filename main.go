@@ -4,93 +4,88 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"time"
 
-	"github.com/vishvananda/netlink"
+	"containers/networking"
+
 	"github.com/vishvananda/netns"
-	"golang.org/x/sys/unix"
+)
+
+const (
+	newNamespace = "netns0"
+	vethName1    = "veth0"
+	vethName2    = "ceth0"
+	ipAddress1   = "172.18.0.11/16"
+	ipAddress2   = "172.18.0.10/16"
 )
 
 func main() {
+	//https://stackoverflow.com/questions/27629380/how-to-exit-a-go-program-honoring-deferred-calls
+	defer os.Exit(0)
 
-	//Checking if the user is root
-	if os.Getuid() != 0 {
-		fmt.Println("Error: user must be root!")
-		return
-	}
+	CheckRootPrivileges()
 
-	// Lock the OS Thread so we don't accidentally switch namespaces
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	//Printing the process id that which runs this program
-	//See the information about of namespace created in /proc/<pid>/task/<pid>/ns/ in linux machine
-	fmt.Printf("%d %d\n", os.Getpid(), unix.Gettid())
-
-	//Getting the existing namespace which is root namespace
-	originalNs, err := netns.Get()
+	rootNs, err := netns.Get()
 	if err != nil {
-		fmt.Println("Error getting original namespace:", err)
+		fmt.Println("unable to get root namespace:", err)
 		return
 	}
-	defer originalNs.Close()
 
-	//Creating a new named namespace netns0
-	newNs, err := netns.NewNamed("netns0")
+	defer rootNs.Close()
+
+	newNs, err := netns.NewNamed(newNamespace)
 	if err != nil {
-		fmt.Println("Error creating new namespace:", err)
+		fmt.Println("unable to create namespace:", err)
 		return
 	}
+
 	defer newNs.Close()
 
 	fmt.Println("Created new network namespace:", newNs)
 
-	//falling back to original namespace
-	netns.Set(originalNs)
-	fmt.Println("Switched back to the original network namespace")
-
-	//Creating pair of virtual ethernet devices which will acts a tunnel to interact with new namespace
-	veth := &netlink.Veth{
-		LinkAttrs: netlink.LinkAttrs{Name: "veth0"},
-		PeerName:  "ceth0",
-	}
-
-	if err := netlink.LinkAdd(veth); err != nil {
-		fmt.Println("Failed to create veth pair:", err)
+	if err := configureVethPair(newNs); err != nil {
+		fmt.Println("Error configuring veth pair:", err)
 		return
 	}
 
-	//Getting the virtual ethernet device which is created
-	clink, err := netlink.LinkByName("ceth0")
-	if err != nil {
-		fmt.Printf("Failed to find interface %s: %v\n", "ceth0", err)
-		os.Exit(1)
+	fmt.Println("Configuration completed successfully!")
+}
+
+func configureVethPair(newNs netns.NsHandle) error {
+	vethPair := networking.VethPair{
+		Name1: vethName1,
+		Name2: vethName2,
 	}
 
-	//Sending the device from root namespace to new namespace
-	if err = netlink.LinkSetNsFd(clink, int(newNs)); err != nil {
-		fmt.Printf("Failed to move interface to namespace: %v\n", err)
-		os.Exit(1)
+	if err := vethPair.Create(); err != nil {
+		return fmt.Errorf("failed to create veth pair: %w", err)
 	}
 
-	//Getting the veth0
-	vlink, err := netlink.LinkByName("veth0")
-	if err != nil {
-		fmt.Printf("Failed to find interface %s: %v\n", "veth0", err)
-		os.Exit(1)
+	if err := vethPair.MoveOneToNamespace(newNs); err != nil {
+		return fmt.Errorf("failed to move veth pair to namespace: %w", err)
 	}
 
-	//Setting the link up
-	if err := netlink.LinkSetUp(vlink); err != nil {
-		fmt.Printf("Failed to move interface to namespace: %v\n", err)
-		os.Exit(1)
+	if err := networking.SetLinkUp(vethPair.Name1); err != nil {
+		return fmt.Errorf("failed to set link up for %s: %w", vethPair.Name1, err)
 	}
 
-	//Adding address to veth0
-	addr, _ := netlink.ParseAddr("172.18.0.11/16")
-	netlink.AddrAdd(vlink, addr)
+	if err := networking.ConfigureIP(vethPair.Name1, ipAddress1); err != nil {
+		return fmt.Errorf("failed to configure IP for %s: %w", vethPair.Name1, err)
+	}
 
-	time.Sleep(time.Minute * 2)
-	netns.DeleteNamed("netns0")
+	if err := netns.Set(newNs); err != nil {
+		return fmt.Errorf("failed to set new namespace:%w", err)
+	}
 
+	if err := networking.SetLinkUp(vethPair.Name2); err != nil {
+		return fmt.Errorf("failed to set link up for %s: %w", vethPair.Name2, err)
+	}
+
+	if err := networking.ConfigureIP(vethPair.Name2, ipAddress2); err != nil {
+		return fmt.Errorf("failed to configure IP for %s: %w", vethPair.Name2, err)
+	}
+
+	return nil
 }
