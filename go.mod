@@ -1,4 +1,4 @@
-module containers
+module github.com/narharim/container-networking
 
 go 1.20
 
