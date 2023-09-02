@@ -22,11 +22,11 @@ var (
 
 func main() {
 
-	flag.StringVar(&newNamespace, "namespace", "", "new namespace")
-	flag.StringVar(&veth, "veth", "", "veth device")
+	flag.StringVar(&newNamespace, "namespace", "", "new namespace name")
+	flag.StringVar(&veth, "veth", "", "virtual ethernet device")
 	flag.StringVar(&peerVeth, "pveth", "", "peer virtual ethernet device")
-	flag.StringVar(&vethIpAddr, "veth-ip", "", "veth ip address")
-	flag.StringVar(&peerVethIpAddr, "pveth-ip", "", "peer ip address")
+	flag.StringVar(&vethIpAddr, "veth-ip", "", "virtual ethernet device ip address")
+	flag.StringVar(&peerVethIpAddr, "pveth-ip", "", "peer virtual ip address")
 	flag.BoolVar(&assignAddress, "addr", true, "assign ip address to veth")
 
 	flag.Parse()
@@ -37,9 +37,18 @@ func main() {
 		return
 	}
 
-	if newNamespace == "" || veth == "" || peerVeth == "" || vethIpAddr == "" || peerVethIpAddr == "" {
-		flag.Usage()
-		return
+	if assignAddress {
+		if newNamespace == "" || veth == "" || peerVeth == "" || vethIpAddr == "" || peerVethIpAddr == "" {
+			flag.Usage()
+			return
+		}
+	}
+
+	if !assignAddress {
+		if newNamespace == "" || veth == "" || peerVeth == "" || peerVethIpAddr == "" {
+			flag.Usage()
+			return
+		}
 	}
 
 	user.CheckRootPrivileges()
