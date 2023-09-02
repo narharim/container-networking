@@ -23,16 +23,8 @@ func (v VethPair) Create() error {
 	return nil
 }
 
-func GetVethLinkByName(name string) (netlink.Link, error) {
-	link, err := netlink.LinkByName(name)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get veth link by name %s: %w", name, err)
-	}
-	return link, nil
-}
-
 func (v VethPair) MoveOneToNamespace(ns netns.NsHandle) error {
-	link, err := GetVethLinkByName(v.Name2)
+	link, err := GetLinkByName(v.Name2)
 	if err != nil {
 		return err
 	}
@@ -42,19 +34,8 @@ func (v VethPair) MoveOneToNamespace(ns netns.NsHandle) error {
 	return nil
 }
 
-func SetLinkUp(name string) error {
-	link, err := GetVethLinkByName(name)
-	if err != nil {
-		return err
-	}
-	if err := netlink.LinkSetUp(link); err != nil {
-		return fmt.Errorf("failed to set interface up: %v\n", err)
-	}
-	return nil
-}
-
 func ConfigureIP(name, ipAddress string) error {
-	link, err := GetVethLinkByName(name)
+	link, err := GetLinkByName(name)
 	if err != nil {
 		return err
 	}
@@ -102,5 +83,23 @@ func (v VethPair) ConfigureVethPair(ns netns.NsHandle, confIp bool, ip1, ip2 str
 		return fmt.Errorf("failed to configure IP for %s: %w", v.Name2, err)
 	}
 
+	return nil
+}
+
+func AttachToBridge(v string, b Bridge) error {
+
+	vlink, err := GetLinkByName(v)
+	if err != nil {
+		return err
+	}
+
+	blink, err := GetLinkByName(b.Name)
+	if err != nil {
+		return err
+	}
+
+	if err := netlink.LinkSetMaster(vlink, blink); err != nil {
+		return fmt.Errorf("failed to set %s to master %s : %w", vlink, blink, err)
+	}
 	return nil
 }
