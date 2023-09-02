@@ -1,7 +1,9 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"os"
 	"runtime"
 
 	network "github.com/narharim/container-networking/pkg/network"
@@ -9,15 +11,36 @@ import (
 	"github.com/vishvananda/netns"
 )
 
-const (
-	newNamespace = "netns0"
-	vethName1    = "veth0"
-	vethName2    = "ceth0"
-	ipAddress1   = "172.18.0.11/16"
-	ipAddress2   = "172.18.0.10/16"
+var (
+	newNamespace   string
+	veth           string
+	peerVeth       string
+	vethIpAddr     string
+	peerVethIpAddr string
+	assignAddress  bool
 )
 
 func main() {
+
+	flag.StringVar(&newNamespace, "namespace", "", "new namespace")
+	flag.StringVar(&veth, "veth", "", "veth device")
+	flag.StringVar(&peerVeth, "pveth", "", "peer virtual ethernet device")
+	flag.StringVar(&vethIpAddr, "veth-ip", "", "veth ip address")
+	flag.StringVar(&peerVethIpAddr, "pveth-ip", "", "peer ip address")
+	flag.BoolVar(&assignAddress, "addr", true, "assign ip address to veth")
+
+	flag.Parse()
+
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: %s [options]\n", os.Args[0])
+		flag.PrintDefaults()
+		return
+	}
+
+	if newNamespace == "" || veth == "" || peerVeth == "" || vethIpAddr == "" || peerVethIpAddr == "" {
+		flag.Usage()
+		return
+	}
 
 	user.CheckRootPrivileges()
 
@@ -44,47 +67,15 @@ func main() {
 
 	netns.Set(rootNs)
 
-	if err := configureVethPair(newNs); err != nil {
+	vethPair := &network.VethPair{
+		Name1: veth,
+		Name2: peerVeth,
+	}
+
+	if err := vethPair.ConfigureVethPair(newNs, assignAddress, vethIpAddr, peerVethIpAddr); err != nil {
 		fmt.Println("Error configuring veth pair:", err)
 		return
 	}
 
 	fmt.Println("Configuration completed successfully!")
-}
-
-func configureVethPair(newNs netns.NsHandle) error {
-	vethPair := network.VethPair{
-		Name1: vethName1,
-		Name2: vethName2,
-	}
-
-	if err := vethPair.Create(); err != nil {
-		return fmt.Errorf("failed to create veth pair: %w", err)
-	}
-
-	if err := vethPair.MoveOneToNamespace(newNs); err != nil {
-		return fmt.Errorf("failed to move veth pair to namespace: %w", err)
-	}
-
-	if err := network.SetLinkUp(vethPair.Name1); err != nil {
-		return fmt.Errorf("failed to set link up for %s: %w", vethPair.Name1, err)
-	}
-
-	if err := network.ConfigureIP(vethPair.Name1, ipAddress1); err != nil {
-		return fmt.Errorf("failed to configure IP for %s: %w", vethPair.Name1, err)
-	}
-
-	if err := netns.Set(newNs); err != nil {
-		return fmt.Errorf("failed to set new namespace:%w", err)
-	}
-
-	if err := network.SetLinkUp(vethPair.Name2); err != nil {
-		return fmt.Errorf("failed to set link up for %s: %w", vethPair.Name2, err)
-	}
-
-	if err := network.ConfigureIP(vethPair.Name2, ipAddress2); err != nil {
-		return fmt.Errorf("failed to configure IP for %s: %w", vethPair.Name2, err)
-	}
-
-	return nil
 }
