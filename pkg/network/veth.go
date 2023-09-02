@@ -69,3 +69,38 @@ func ConfigureIP(name, ipAddress string) error {
 	}
 	return nil
 }
+
+func (v VethPair) ConfigureVethPair(ns netns.NsHandle, confIp bool, ip1, ip2 string) error {
+
+	if err := v.Create(); err != nil {
+		return fmt.Errorf("failed to create veth pair: %w", err)
+	}
+
+	if err := v.MoveOneToNamespace(ns); err != nil {
+		return fmt.Errorf("failed to move veth pair to namespace: %w", err)
+	}
+
+	if err := SetLinkUp(v.Name1); err != nil {
+		return fmt.Errorf("failed to set link up for %s: %w", v.Name1, err)
+	}
+
+	if confIp {
+		if err := ConfigureIP(v.Name1, ip1); err != nil {
+			return fmt.Errorf("failed to configure IP for %s: %w", v.Name1, err)
+		}
+	}
+
+	if err := netns.Set(ns); err != nil {
+		return fmt.Errorf("failed to set new namespace:%w", err)
+	}
+
+	if err := SetLinkUp(v.Name2); err != nil {
+		return fmt.Errorf("failed to set link up for %s: %w", v.Name2, err)
+	}
+
+	if err := ConfigureIP(v.Name2, ip2); err != nil {
+		return fmt.Errorf("failed to configure IP for %s: %w", v.Name2, err)
+	}
+
+	return nil
+}
